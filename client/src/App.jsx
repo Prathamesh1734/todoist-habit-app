@@ -105,7 +105,6 @@ export default function App() {
       await queryClient.cancelQueries({ queryKey: ["tasks"] });
       const previousTasks = queryClient.getQueryData(["tasks"]);
 
-      // Instantly remove task from UI
       queryClient.setQueryData(["tasks"], (old) =>
         old.filter((task) => task._id !== id),
       );
@@ -126,8 +125,61 @@ export default function App() {
     addTaskMutation.mutate({ title, priority, isRecurring });
   };
 
-  const pendingTasks = tasks.filter((t) => !t.isCompleted).length;
-  const recurringTasks = tasks.filter((t) => t.isRecurring).length;
+  // Split tasks into Active and Completed arrays
+  const activeTasks = tasks.filter((t) => !t.isCompleted);
+  const completedTasks = tasks.filter((t) => t.isCompleted);
+
+  // Helper function to render a task so we don't duplicate code
+  const renderTask = (task) => (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.2 }}
+      key={task._id}
+      className={`group flex items-center justify-between p-3.5 rounded-xl border transition-all ${
+        task.isCompleted
+          ? "bg-zinc-950/50 border-zinc-900/50 opacity-50"
+          : "bg-zinc-900/80 border-zinc-700/50 hover:border-zinc-600 shadow-sm"
+      }`}
+    >
+      <div className="flex items-center gap-3 flex-1">
+        <button
+          onClick={() => toggleMutation.mutate(task._id)}
+          className="text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer"
+        >
+          {task.isCompleted ? (
+            <CircleCheck className="w-5 h-5 text-zinc-500 fill-zinc-800" />
+          ) : (
+            <Circle className={`w-5 h-5 ${PRIORITY_COLORS[task.priority]}`} />
+          )}
+        </button>
+        <span
+          className={`text-sm select-none ${task.isCompleted ? "line-through text-zinc-500" : "text-zinc-200"}`}
+        >
+          {task.title}
+        </span>
+      </div>
+
+      <div className="flex items-center gap-3 ml-4">
+        {task.isRecurring && (
+          <div className="flex items-center gap-1 text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+            <Flame className="w-3.5 h-3.5 fill-amber-500" />
+            <span>{task.currentStreak} day streak</span>
+          </div>
+        )}
+
+        <button
+          onClick={() => deleteMutation.mutate(task._id)}
+          className="text-zinc-600 hover:text-red-400 p-1.5 rounded-md hover:bg-red-400/10 transition-colors focus:outline-none opacity-0 group-hover:opacity-100 cursor-pointer"
+          title="Delete Task"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </motion.div>
+  );
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 font-sans antialiased selection:bg-red-500/30">
@@ -142,13 +194,15 @@ export default function App() {
             <span className="flex items-center gap-2.5">
               <Calendar className="w-4 h-4 text-red-400" /> Today
             </span>
-            <span className="text-xs text-zinc-500">{pendingTasks}</span>
+            <span className="text-xs text-zinc-500">{activeTasks.length}</span>
           </button>
           <button className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors text-sm">
             <span className="flex items-center gap-2.5">
               <Layers className="w-4 h-4 text-blue-400" /> Habits
             </span>
-            <span className="text-xs text-zinc-500">{recurringTasks}</span>
+            <span className="text-xs text-zinc-500">
+              {tasks.filter((t) => t.isRecurring).length}
+            </span>
           </button>
         </nav>
       </aside>
@@ -212,68 +266,42 @@ export default function App() {
           </div>
         </form>
 
-        {/* Task List */}
+        {/* Task Lists Wrapper */}
         {isLoading ? (
           <div className="text-center text-zinc-500 text-sm py-10 flex justify-center items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading tasks...
           </div>
         ) : (
-          <motion.div layout className="space-y-2">
-            <AnimatePresence>
-              {tasks.map((task) => (
-                <motion.div
+          <motion.div layout className="space-y-8">
+            {/* Active Tasks Section */}
+            <motion.div layout className="space-y-2">
+              <AnimatePresence>{activeTasks.map(renderTask)}</AnimatePresence>
+              {activeTasks.length === 0 && (
+                <motion.p
                   layout
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.2 }}
-                  key={task._id}
-                  className={`group flex items-center justify-between p-3.5 rounded-xl border transition-all ${
-                    task.isCompleted
-                      ? "bg-zinc-950/50 border-zinc-900/50 opacity-50"
-                      : "bg-zinc-900/80 border-zinc-700/50 hover:border-zinc-600 shadow-sm"
-                  }`}
+                  className="text-sm text-zinc-500 text-center py-6"
                 >
-                  <div className="flex items-center gap-3 flex-1">
-                    <button
-                      onClick={() => toggleMutation.mutate(task._id)}
-                      className="text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer"
-                    >
-                      {task.isCompleted ? (
-                        <CircleCheck className="w-5 h-5 text-zinc-500 fill-zinc-800" />
-                      ) : (
-                        <Circle
-                          className={`w-5 h-5 ${PRIORITY_COLORS[task.priority]}`}
-                        />
-                      )}
-                    </button>
-                    <span
-                      className={`text-sm select-none ${task.isCompleted ? "line-through text-zinc-500" : "text-zinc-200"}`}
-                    >
-                      {task.title}
-                    </span>
-                  </div>
+                  You're all caught up for today!
+                </motion.p>
+              )}
+            </motion.div>
 
-                  {/* Streak Badge and Delete Button */}
-                  <div className="flex items-center gap-3 ml-4">
-                    {task.isRecurring && (
-                      <div className="flex items-center gap-1 text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                        <Flame className="w-3.5 h-3.5 fill-amber-500" />
-                        <span>{task.currentStreak} day streak</span>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={() => deleteMutation.mutate(task._id)}
-                      className="text-zinc-600 hover:text-red-400 p-1.5 rounded-md hover:bg-red-400/10 transition-colors focus:outline-none opacity-0 group-hover:opacity-100 cursor-pointer"
-                      title="Delete Task"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+            {/* Completed Tasks Section */}
+            {completedTasks.length > 0 && (
+              <motion.div layout className="space-y-2">
+                <motion.div layout className="flex items-center gap-3 mb-4">
+                  <div className="h-px bg-zinc-800 flex-1"></div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                    Completed
+                  </h2>
+                  <div className="h-px bg-zinc-800 flex-1"></div>
                 </motion.div>
-              ))}
-            </AnimatePresence>
+
+                <AnimatePresence>
+                  {completedTasks.map(renderTask)}
+                </AnimatePresence>
+              </motion.div>
+            )}
           </motion.div>
         )}
       </main>
