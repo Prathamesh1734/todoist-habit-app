@@ -40,11 +40,18 @@ const isTaskOverdue = (dateString) => {
 
 export default function App() {
   const queryClient = useQueryClient();
+
+  // Create Form State
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState("p4");
   const [isRecurring, setIsRecurring] = useState(false);
   const [currentView, setCurrentView] = useState("today");
 
+  // Inline Editing State
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+
+  // 1. Fetch Tasks
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ["tasks"],
     queryFn: async () => {
@@ -54,6 +61,7 @@ export default function App() {
     },
   });
 
+  // 2. Add Task Mutation
   const addTaskMutation = useMutation({
     mutationFn: async (newTask) => {
       const res = await fetch(API_URL, {
@@ -71,6 +79,7 @@ export default function App() {
     },
   });
 
+  // 3. Toggle Task Completion (Optimistic)
   const toggleMutation = useMutation({
     mutationFn: async (id) => {
       const res = await fetch(`${API_URL}/${id}/toggle`, { method: "PATCH" });
@@ -109,6 +118,36 @@ export default function App() {
     },
   });
 
+  // 4. Update Task Content (Optimistic Edit)
+  const updateTaskMutation = useMutation({
+    mutationFn: async ({ id, updates }) => {
+      const res = await fetch(`${API_URL}/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error("Failed to update task");
+      return res.json();
+    },
+    onMutate: async ({ id, updates }) => {
+      await queryClient.cancelQueries({ queryKey: ["tasks"] });
+      const previousTasks = queryClient.getQueryData(["tasks"]);
+
+      // Update UI instantly
+      queryClient.setQueryData(["tasks"], (old) =>
+        old.map((task) => (task._id === id ? { ...task, ...updates } : task)),
+      );
+      return { previousTasks };
+    },
+    onError: (err, variables, context) => {
+      queryClient.setQueryData(["tasks"], context.previousTasks);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+
+  // 5. Delete Task Mutation (Optimistic)
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
       const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
@@ -131,13 +170,13 @@ export default function App() {
     },
   });
 
+  // Handle Form Submit
   const handleAddTask = (e) => {
     e.preventDefault();
     if (!title.trim()) return;
 
     let finalTitle = title;
     let dueDate = null;
-
     const parsedResults = chrono.parse(title);
 
     if (parsedResults.length > 0) {
@@ -153,6 +192,40 @@ export default function App() {
     });
   };
 
+  // Inline Editing Handlers
+  const handleDoubleClick = (task) => {
+    if (task.isCompleted) return; // Optional: Prevent editing if checked off
+    setEditingTaskId(task._id);
+    setEditTitle(task.title);
+  };
+
+  const submitEdit = (task) => {
+    if (!editTitle.trim()) {
+      setEditingTaskId(null);
+      return;
+    }
+
+    let finalTitle = editTitle;
+    let dueDate = task.dueDate;
+
+    const parsedResults = chrono.parse(editTitle);
+    if (parsedResults.length > 0) {
+      dueDate = parsedResults[0].start.date();
+      finalTitle = editTitle.replace(parsedResults[0].text, "").trim();
+    }
+
+    // Only fire mutation if something actually changed
+    if (finalTitle !== task.title || dueDate !== task.dueDate) {
+      updateTaskMutation.mutate({
+        id: task._id,
+        updates: { title: finalTitle || editTitle, dueDate },
+      });
+    }
+
+    setEditingTaskId(null);
+  };
+
+  // Filtering & Sorting Logic
   const viewFilteredTasks = tasks.filter((task) => {
     if (currentView === "habits") return task.isRecurring;
     return true;
@@ -167,14 +240,11 @@ export default function App() {
       if (aOverdue && !bOverdue) return -1;
       if (!aOverdue && bOverdue) return 1;
 
-      if (a.priority !== b.priority) {
+      if (a.priority !== b.priority)
         return a.priority.localeCompare(b.priority);
-      }
 
-      if (a.dueDate && b.dueDate) {
+      if (a.dueDate && b.dueDate)
         return new Date(a.dueDate) - new Date(b.dueDate);
-      }
-
       if (a.dueDate && !b.dueDate) return -1;
       if (!a.dueDate && b.dueDate) return 1;
 
@@ -185,6 +255,7 @@ export default function App() {
 
   const renderTask = (task) => {
     const isOverdue = isTaskOverdue(task.dueDate);
+    const isEditing = editingTaskId === task._id;
 
     return (
       <motion.div
@@ -194,17 +265,16 @@ export default function App() {
         exit={{ opacity: 0, scale: 0.95 }}
         transition={{ duration: 0.2 }}
         key={task._id}
-        // FIX: Added w-full here so when it becomes absolute during exit, it keeps its width
         className={`w-full group flex items-center justify-between p-3.5 rounded-xl border transition-all ${
           task.isCompleted
             ? "bg-zinc-950/50 border-zinc-900/50 opacity-50"
             : "bg-zinc-900/80 border-zinc-700/50 hover:border-zinc-600 shadow-sm"
-        }`}
+        } ${isEditing ? "border-blue-500/50 ring-1 ring-blue-500/20" : ""}`}
       >
         <div className="flex items-start gap-3 flex-1">
           <button
             onClick={() => toggleMutation.mutate(task._id)}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer mt-0.5"
+            className="text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer mt-0.5 shrink-0"
           >
             {task.isCompleted ? (
               <CircleCheck className="w-5 h-5 text-zinc-500 fill-zinc-800" />
@@ -213,14 +283,31 @@ export default function App() {
             )}
           </button>
 
-          <div className="flex flex-col">
-            <span
-              className={`text-sm select-none ${task.isCompleted ? "line-through text-zinc-500" : "text-zinc-200"}`}
-            >
-              {task.title}
-            </span>
+          <div className="flex flex-col w-full">
+            {isEditing ? (
+              <input
+                autoFocus
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onBlur={() => submitEdit(task)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submitEdit(task);
+                  if (e.key === "Escape") setEditingTaskId(null);
+                }}
+                className="bg-zinc-950/80 border border-zinc-700 rounded-md px-2 py-0.5 text-sm text-zinc-100 outline-none w-full mr-4 focus:border-blue-500/50"
+              />
+            ) : (
+              <span
+                onDoubleClick={() => handleDoubleClick(task)}
+                title="Double-click to edit"
+                className={`text-sm select-none cursor-text w-full ${task.isCompleted ? "line-through text-zinc-500" : "text-zinc-200"}`}
+              >
+                {task.title}
+              </span>
+            )}
 
-            {task.dueDate && (
+            {task.dueDate && !isEditing && (
               <div
                 className={`flex items-center gap-1 mt-1 text-[11px] font-medium ${
                   task.isCompleted
@@ -237,7 +324,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 ml-4">
+        <div className="flex items-center gap-3 ml-4 shrink-0">
           {task.isRecurring && (
             <div className="flex items-center gap-1 text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
               <Flame className="w-3.5 h-3.5 fill-amber-500" />
@@ -260,7 +347,7 @@ export default function App() {
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 font-sans antialiased selection:bg-red-500/30">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-zinc-800 p-4 flex flex-col">
+      <aside className="w-64 border-r border-zinc-800 p-4 flex flex-col shrink-0">
         <div className="flex items-center gap-2 mb-8 px-2 text-red-500 font-bold text-xl tracking-tight">
           <CircleCheck className="w-6 h-6" />
           <span>TaskTrack</span>
@@ -312,7 +399,7 @@ export default function App() {
         </nav>
       </aside>
 
-      {/* Main Content Area - FIX: Added overflow-x-hidden and w-full */}
+      {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto overflow-x-hidden w-full max-w-3xl mx-auto px-8 py-10">
         <header className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight">
@@ -325,7 +412,7 @@ export default function App() {
           </p>
         </header>
 
-        {/* Task Creation Form */}
+        {/* Task Form */}
         <form
           onSubmit={handleAddTask}
           className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-8 focus-within:border-zinc-700 transition-colors shadow-sm"
@@ -382,13 +469,13 @@ export default function App() {
           </div>
         </form>
 
+        {/* Task Lists */}
         {isLoading ? (
           <div className="text-center text-zinc-500 text-sm py-10 flex justify-center items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading tasks...
           </div>
         ) : (
           <motion.div layout className="space-y-8">
-            {/* FIX: Added relative and w-full to list container */}
             <motion.div layout className="space-y-2 relative w-full">
               <AnimatePresence mode="popLayout">
                 {activeTasks.map(renderTask)}
@@ -406,7 +493,6 @@ export default function App() {
             </motion.div>
 
             {completedTasks.length > 0 && (
-              // FIX: Added relative and w-full to list container
               <motion.div layout className="space-y-2 relative w-full">
                 <motion.div layout className="flex items-center gap-3 mb-4">
                   <div className="h-px bg-zinc-800 flex-1"></div>

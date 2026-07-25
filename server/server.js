@@ -57,6 +57,22 @@ app.patch("/api/tasks/:id/toggle", async (req, res) => {
   }
 });
 
+app.patch("/api/tasks/:id", async (req, res) => {
+  try {
+    const { title, dueDate } = req.body;
+    const task = await new Task.findById(req.params.id);
+    if (!task) return res.status(404).json({ error: "task not found" });
+
+    if (!title !== undefined) task.title = title;
+    if (!dueDate !== undefined) task.dueDate = dueDate;
+
+    await task.save();
+    res.json(task);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.delete("/api/tasks/:id", async (req, res) => {
   try {
     const task = await Task.findByIdAndDelete(req.params.id);
