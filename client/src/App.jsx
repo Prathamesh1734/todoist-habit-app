@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   CircleCheck,
   Circle,
@@ -10,7 +11,6 @@ import {
   Loader2,
   Trash2,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
 
 const API_URL = "http://localhost:5000/api/tasks";
 
@@ -21,21 +21,23 @@ const PRIORITY_COLORS = {
   p4: "text-gray-400 fill-transparent",
 };
 
-function App() {
+export default function App() {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState("p4");
   const [isRecurring, setIsRecurring] = useState(false);
 
+  // 1. Fetch Tasks
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ["tasks"],
     queryFn: async () => {
       const res = await fetch(API_URL);
-      if (!res.ok) throw new Error("network error");
+      if (!res.ok) throw new Error("Network response was not ok");
       return res.json();
     },
   });
 
+  // 2. Add Task Mutation
   const addTaskMutation = useMutation({
     mutationFn: async (newTask) => {
       const res = await fetch(API_URL, {
@@ -53,6 +55,7 @@ function App() {
     },
   });
 
+  // 3. Toggle Task Mutation
   const toggleMutation = useMutation({
     mutationFn: async (id) => {
       const res = await fetch(`${API_URL}/${id}/toggle`, { method: "PATCH" });
@@ -60,7 +63,7 @@ function App() {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["tasks"] });
-      const previousTask = queryClient.getQueryData(["tasks"]);
+      const previousTasks = queryClient.getQueryData(["tasks"]);
 
       queryClient.setQueryData(["tasks"], (old) =>
         old.map((task) => {
@@ -81,40 +84,38 @@ function App() {
           return task;
         }),
       );
-      return { previousTask };
+      return { previousTasks };
     },
     onError: (err, id, context) => {
-      queryClient.setQueryData(["tasks"], context.previousTask); // rollback on error
+      queryClient.setQueryData(["tasks"], context.previousTasks);
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks"] }); //sync w server
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 
+  // 4. Delete Task Mutation
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
       const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("failed to delete task");
+      if (!res.ok) throw new Error("Failed to delete task");
       return res.json();
     },
     onMutate: async (id) => {
-      // Cancel ongoing fetches and get current tasks
       await queryClient.cancelQueries({ queryKey: ["tasks"] });
-      const previousTask = queryClient.getQueryData(["tasks"]);
+      const previousTasks = queryClient.getQueryData(["tasks"]);
 
-      // Optimistically remove the task from the list instantly
+      // Instantly remove task from UI
       queryClient.setQueryData(["tasks"], (old) =>
         old.filter((task) => task._id !== id),
       );
 
-      return { previousTask };
+      return { previousTasks };
     },
     onError: (err, id, context) => {
-      // Rollback on failure
-      queryClient.setQueryData(["tasks"], context.previousTask);
+      queryClient.setQueryData(["tasks"], context.previousTasks);
     },
     onSettled: () => {
-      // sync with server
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
@@ -129,11 +130,11 @@ function App() {
   const recurringTasks = tasks.filter((t) => t.isRecurring).length;
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-100 font-sans antialised selection:bg-red-500/30">
-      {/* sidebar */}
+    <div className="flex h-screen bg-zinc-950 text-zinc-100 font-sans antialiased selection:bg-red-500/30">
+      {/* Sidebar */}
       <aside className="w-64 border-r border-zinc-800 p-4 flex flex-col">
         <div className="flex items-center gap-2 mb-8 px-2 text-red-500 font-bold text-xl tracking-tight">
-          <CheckCircle2 className="w-6 h-6" />
+          <CircleCheck className="w-6 h-6" />
           <span>TaskTrack</span>
         </div>
         <nav className="space-y-1">
@@ -151,14 +152,15 @@ function App() {
           </button>
         </nav>
       </aside>
-      {/* main content */}
+
+      {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto max-w-3xl mx-auto px-8 py-10">
         <header className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight">Today</h1>
-          <p className="text-zinc-500 text-sm mt-1">what are u working on?</p>
+          <p className="text-zinc-500 text-sm mt-1">What are you working on?</p>
         </header>
 
-        {/* task creation form */}
+        {/* Task Creation Form */}
         <form
           onSubmit={handleAddTask}
           className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 mb-8 focus-within:border-zinc-700 transition-colors shadow-sm"
@@ -166,9 +168,7 @@ function App() {
           <input
             type="text"
             value={title}
-            onChange={(e) => {
-              setTitle(e.target.value);
-            }}
+            onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g., Meditate for 10 minutes"
             className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none mb-3"
             disabled={addTaskMutation.isPending}
@@ -177,9 +177,7 @@ function App() {
             <div className="flex items-center gap-2">
               <select
                 value={priority}
-                onChange={(e) => {
-                  setPriority(e.target.value);
-                }}
+                onChange={(e) => setPriority(e.target.value)}
                 className="bg-zinc-800 text-xs text-zinc-300 rounded-md px-2 py-1.5 border border-zinc-700 focus:outline-none cursor-pointer hover:bg-zinc-700 transition-colors"
               >
                 <option value="p1">P1 (High)</option>
@@ -189,9 +187,7 @@ function App() {
               </select>
               <button
                 type="button"
-                onClick={() => {
-                  setIsRecurring(!isRecurring);
-                }}
+                onClick={() => setIsRecurring(!isRecurring)}
                 className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-md border transition-colors ${
                   isRecurring
                     ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
@@ -210,13 +206,13 @@ function App() {
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <Plus className="w-3.5 h-3.5" />
-              )}{" "}
+              )}
               Add
             </button>
           </div>
         </form>
 
-        {/* task list with framer motion */}
+        {/* Task List */}
         {isLoading ? (
           <div className="text-center text-zinc-500 text-sm py-10 flex justify-center items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading tasks...
@@ -232,7 +228,7 @@ function App() {
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.2 }}
                   key={task._id}
-                  className={`flex items-center justify-between p-3.5 rounded-xl border transition-all ${
+                  className={`group flex items-center justify-between p-3.5 rounded-xl border transition-all ${
                     task.isCompleted
                       ? "bg-zinc-950/50 border-zinc-900/50 opacity-50"
                       : "bg-zinc-900/80 border-zinc-700/50 hover:border-zinc-600 shadow-sm"
@@ -244,7 +240,7 @@ function App() {
                       className="text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer"
                     >
                       {task.isCompleted ? (
-                        <CheckCircle2 className="w-5 h-5 text-zinc-500 fill-zinc-800" />
+                        <CircleCheck className="w-5 h-5 text-zinc-500 fill-zinc-800" />
                       ) : (
                         <Circle
                           className={`w-5 h-5 ${PRIORITY_COLORS[task.priority]}`}
@@ -284,5 +280,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
