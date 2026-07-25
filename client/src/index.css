@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* Enable manual class-based dark mode for Tailwind v4 */
-@variant dark (&:where(.dark, .dark *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* Custom scrollbar to match the minimal aesthetic */
 ::-webkit-scrollbar {

@@ -14,9 +14,18 @@ export default function App() {
   const queryClient = useQueryClient();
   const [currentView, setCurrentView] = useState("today");
 
-  // Theme State (Defaults to dark)
+  // Theme State
   const [theme, setTheme] = useState("dark");
   const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
+
+  // ADD THIS: Inject the class into the root HTML element
+  useEffect(() => {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme]);
 
   const { data: tasks = [] } = useQuery({
     queryKey: ["tasks"],
