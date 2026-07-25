@@ -24,13 +24,19 @@ const PRIORITY_COLORS = {
   p4: "text-gray-400 fill-transparent",
 };
 
-// Helper to format dates nicely in the UI
 const formatDueDate = (dateString) => {
   if (!dateString) return null;
   const d = new Date(dateString);
   if (isToday(d)) return "Today";
   if (isTomorrow(d)) return "Tomorrow";
   return format(d, "MMM d");
+};
+
+// Helper to determine if a task is strictly overdue (past days, not today)
+const isTaskOverdue = (dateString) => {
+  if (!dateString) return false;
+  const d = new Date(dateString);
+  return isPast(startOfDay(d)) && !isToday(d);
 };
 
 export default function App() {
@@ -137,19 +143,15 @@ export default function App() {
     let finalTitle = title;
     let dueDate = null;
 
-    // --- NLP DATE PARSING LOGIC ---
     const parsedResults = chrono.parse(title);
 
     if (parsedResults.length > 0) {
-      // Extract the parsed Date object
       dueDate = parsedResults[0].start.date();
-
-      // Remove the exact parsed text (e.g., "tomorrow") from the title string
       finalTitle = title.replace(parsedResults[0].text, "").trim();
     }
 
     addTaskMutation.mutate({
-      title: finalTitle || title, // fallback just in case the title becomes empty
+      title: finalTitle || title,
       priority,
       isRecurring,
       dueDate,
@@ -161,14 +163,38 @@ export default function App() {
     return true;
   });
 
-  const activeTasks = viewFilteredTasks.filter((t) => !t.isCompleted);
+  // --- SORTING LOGIC ---
+  const activeTasks = viewFilteredTasks
+    .filter((t) => !t.isCompleted)
+    .sort((a, b) => {
+      const aOverdue = isTaskOverdue(a.dueDate);
+      const bOverdue = isTaskOverdue(b.dueDate);
+
+      // 1. Overdue tasks float to the top
+      if (aOverdue && !bOverdue) return -1;
+      if (!aOverdue && bOverdue) return 1;
+
+      // 2. Sort by Priority (p1 comes before p4)
+      if (a.priority !== b.priority) {
+        return a.priority.localeCompare(b.priority);
+      }
+
+      // 3. Sort by Due Date (earliest first)
+      if (a.dueDate && b.dueDate) {
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      }
+
+      // 4. Tasks with due dates come before tasks without
+      if (a.dueDate && !b.dueDate) return -1;
+      if (!a.dueDate && b.dueDate) return 1;
+
+      return 0; // Fallback to original creation order
+    });
+
   const completedTasks = viewFilteredTasks.filter((t) => t.isCompleted);
 
   const renderTask = (task) => {
-    const isOverdue =
-      task.dueDate &&
-      isPast(startOfDay(new Date(task.dueDate))) &&
-      !isToday(new Date(task.dueDate));
+    const isOverdue = isTaskOverdue(task.dueDate);
 
     return (
       <motion.div
@@ -203,7 +229,6 @@ export default function App() {
               {task.title}
             </span>
 
-            {/* Display the Due Date */}
             {task.dueDate && (
               <div
                 className={`flex items-center gap-1 mt-1 text-[11px] font-medium ${
@@ -321,7 +346,7 @@ export default function App() {
             placeholder={
               currentView === "habits"
                 ? "e.g., Read 20 pages every day..."
-                : "e.g., Buy groceries tomorrow or next Friday..."
+                : "e.g., Pay electricity bill p1 tomorrow..."
             }
             className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none mb-3"
             disabled={addTaskMutation.isPending}
