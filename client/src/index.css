@@ -1,13 +1,19 @@
 @import "tailwindcss";
 
-/* Optional: Custom scrollbar styling to match the dark theme */
+/* Enable manual class-based dark mode for Tailwind v4 */
+@variant dark (&:where(.dark, .dark *));
+
+/* Custom scrollbar to match the minimal aesthetic */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #27272a; /* zinc-800 */
+  background: #e5e5e5;
   border-radius: 4px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #262626;
 }
