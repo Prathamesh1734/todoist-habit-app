@@ -10,7 +10,10 @@ import {
   Layers,
   Loader2,
   Trash2,
+  CalendarClock,
 } from "lucide-react";
+import * as chrono from "chrono-node";
+import { format, isToday, isTomorrow, isPast, startOfDay } from "date-fns";
 
 const API_URL = "http://localhost:5000/api/tasks";
 
@@ -21,14 +24,21 @@ const PRIORITY_COLORS = {
   p4: "text-gray-400 fill-transparent",
 };
 
+// Helper to format dates nicely in the UI
+const formatDueDate = (dateString) => {
+  if (!dateString) return null;
+  const d = new Date(dateString);
+  if (isToday(d)) return "Today";
+  if (isTomorrow(d)) return "Tomorrow";
+  return format(d, "MMM d");
+};
+
 export default function App() {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState("p4");
   const [isRecurring, setIsRecurring] = useState(false);
-
-  // NEW: State to track active sidebar filter
-  const [currentView, setCurrentView] = useState("today"); // 'today' | 'habits'
+  const [currentView, setCurrentView] = useState("today");
 
   // 1. Fetch Tasks
   const { data: tasks = [], isLoading } = useQuery({
@@ -54,7 +64,7 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       setTitle("");
       setPriority("p4");
-      setIsRecurring(currentView === "habits"); // Automatically set to true if adding from Habits view
+      setIsRecurring(currentView === "habits");
     },
   });
 
@@ -107,11 +117,9 @@ export default function App() {
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: ["tasks"] });
       const previousTasks = queryClient.getQueryData(["tasks"]);
-
       queryClient.setQueryData(["tasks"], (old) =>
         old.filter((task) => task._id !== id),
       );
-
       return { previousTasks };
     },
     onError: (err, id, context) => {
@@ -125,70 +133,113 @@ export default function App() {
   const handleAddTask = (e) => {
     e.preventDefault();
     if (!title.trim()) return;
-    addTaskMutation.mutate({ title, priority, isRecurring });
+
+    let finalTitle = title;
+    let dueDate = null;
+
+    // --- NLP DATE PARSING LOGIC ---
+    const parsedResults = chrono.parse(title);
+
+    if (parsedResults.length > 0) {
+      // Extract the parsed Date object
+      dueDate = parsedResults[0].start.date();
+
+      // Remove the exact parsed text (e.g., "tomorrow") from the title string
+      finalTitle = title.replace(parsedResults[0].text, "").trim();
+    }
+
+    addTaskMutation.mutate({
+      title: finalTitle || title, // fallback just in case the title becomes empty
+      priority,
+      isRecurring,
+      dueDate,
+    });
   };
 
-  // --- FILTERING LOGIC ---
-  // First, filter by the active sidebar view
   const viewFilteredTasks = tasks.filter((task) => {
     if (currentView === "habits") return task.isRecurring;
-    return true; // 'today' shows everything for now
+    return true;
   });
 
-  // Then split into active and completed for the UI
   const activeTasks = viewFilteredTasks.filter((t) => !t.isCompleted);
   const completedTasks = viewFilteredTasks.filter((t) => t.isCompleted);
 
-  const renderTask = (task) => (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.2 }}
-      key={task._id}
-      className={`group flex items-center justify-between p-3.5 rounded-xl border transition-all ${
-        task.isCompleted
-          ? "bg-zinc-950/50 border-zinc-900/50 opacity-50"
-          : "bg-zinc-900/80 border-zinc-700/50 hover:border-zinc-600 shadow-sm"
-      }`}
-    >
-      <div className="flex items-center gap-3 flex-1">
-        <button
-          onClick={() => toggleMutation.mutate(task._id)}
-          className="text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer"
-        >
-          {task.isCompleted ? (
-            <CircleCheck className="w-5 h-5 text-zinc-500 fill-zinc-800" />
-          ) : (
-            <Circle className={`w-5 h-5 ${PRIORITY_COLORS[task.priority]}`} />
-          )}
-        </button>
-        <span
-          className={`text-sm select-none ${task.isCompleted ? "line-through text-zinc-500" : "text-zinc-200"}`}
-        >
-          {task.title}
-        </span>
-      </div>
+  const renderTask = (task) => {
+    const isOverdue =
+      task.dueDate &&
+      isPast(startOfDay(new Date(task.dueDate))) &&
+      !isToday(new Date(task.dueDate));
 
-      <div className="flex items-center gap-3 ml-4">
-        {task.isRecurring && (
-          <div className="flex items-center gap-1 text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-            <Flame className="w-3.5 h-3.5 fill-amber-500" />
-            <span>{task.currentStreak} day streak</span>
+    return (
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+        key={task._id}
+        className={`group flex items-center justify-between p-3.5 rounded-xl border transition-all ${
+          task.isCompleted
+            ? "bg-zinc-950/50 border-zinc-900/50 opacity-50"
+            : "bg-zinc-900/80 border-zinc-700/50 hover:border-zinc-600 shadow-sm"
+        }`}
+      >
+        <div className="flex items-start gap-3 flex-1">
+          <button
+            onClick={() => toggleMutation.mutate(task._id)}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer mt-0.5"
+          >
+            {task.isCompleted ? (
+              <CircleCheck className="w-5 h-5 text-zinc-500 fill-zinc-800" />
+            ) : (
+              <Circle className={`w-5 h-5 ${PRIORITY_COLORS[task.priority]}`} />
+            )}
+          </button>
+
+          <div className="flex flex-col">
+            <span
+              className={`text-sm select-none ${task.isCompleted ? "line-through text-zinc-500" : "text-zinc-200"}`}
+            >
+              {task.title}
+            </span>
+
+            {/* Display the Due Date */}
+            {task.dueDate && (
+              <div
+                className={`flex items-center gap-1 mt-1 text-[11px] font-medium ${
+                  task.isCompleted
+                    ? "text-zinc-600"
+                    : isOverdue
+                      ? "text-red-400"
+                      : "text-blue-400"
+                }`}
+              >
+                <CalendarClock className="w-3 h-3" />
+                {formatDueDate(task.dueDate)}
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
-        <button
-          onClick={() => deleteMutation.mutate(task._id)}
-          className="text-zinc-600 hover:text-red-400 p-1.5 rounded-md hover:bg-red-400/10 transition-colors focus:outline-none opacity-0 group-hover:opacity-100 cursor-pointer"
-          title="Delete Task"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
-    </motion.div>
-  );
+        <div className="flex items-center gap-3 ml-4">
+          {task.isRecurring && (
+            <div className="flex items-center gap-1 text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+              <Flame className="w-3.5 h-3.5 fill-amber-500" />
+              <span>{task.currentStreak}</span>
+            </div>
+          )}
+
+          <button
+            onClick={() => deleteMutation.mutate(task._id)}
+            className="text-zinc-600 hover:text-red-400 p-1.5 rounded-md hover:bg-red-400/10 transition-colors focus:outline-none opacity-0 group-hover:opacity-100 cursor-pointer"
+            title="Delete Task"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </motion.div>
+    );
+  };
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 font-sans antialiased selection:bg-red-500/30">
@@ -202,7 +253,7 @@ export default function App() {
           <button
             onClick={() => {
               setCurrentView("today");
-              setIsRecurring(false); // Reset to default task type
+              setIsRecurring(false);
             }}
             className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium text-sm transition-colors cursor-pointer ${
               currentView === "today"
@@ -224,7 +275,7 @@ export default function App() {
           <button
             onClick={() => {
               setCurrentView("habits");
-              setIsRecurring(true); // Default to habits when on the habits tab
+              setIsRecurring(true);
             }}
             className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium text-sm transition-colors cursor-pointer ${
               currentView === "habits"
@@ -269,8 +320,8 @@ export default function App() {
             onChange={(e) => setTitle(e.target.value)}
             placeholder={
               currentView === "habits"
-                ? "e.g., Read 20 pages..."
-                : "e.g., Pay electricity bill..."
+                ? "e.g., Read 20 pages every day..."
+                : "e.g., Buy groceries tomorrow or next Friday..."
             }
             className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none mb-3"
             disabled={addTaskMutation.isPending}
@@ -322,7 +373,6 @@ export default function App() {
           </div>
         ) : (
           <motion.div layout className="space-y-8">
-            {/* Active Tasks Section */}
             <motion.div layout className="space-y-2">
               <AnimatePresence mode="popLayout">
                 {activeTasks.map(renderTask)}
@@ -339,7 +389,6 @@ export default function App() {
               )}
             </motion.div>
 
-            {/* Completed Tasks Section */}
             {completedTasks.length > 0 && (
               <motion.div layout className="space-y-2">
                 <motion.div layout className="flex items-center gap-3 mb-4">
