@@ -57,18 +57,28 @@ app.patch("/api/tasks/:id/toggle", async (req, res) => {
   }
 });
 
+// Update task details (title and due date)
 app.patch("/api/tasks/:id", async (req, res) => {
   try {
     const { title, dueDate } = req.body;
-    const task = await new Task.findById(req.params.id);
-    if (!task) return res.status(404).json({ error: "task not found" });
+    const task = await Task.findById(req.params.id);
 
-    if (!title !== undefined) task.title = title;
-    if (!dueDate !== undefined) task.dueDate = dueDate;
+    if (!task) return res.status(404).json({ error: "Task not found" });
+
+    if (title !== undefined) {
+      task.title = title;
+    }
+
+    if (dueDate !== undefined) {
+      // If frontend explicitly sends null, accept it. Otherwise, parse the date.
+      task.dueDate = dueDate === null ? null : new Date(dueDate);
+    }
 
     await task.save();
     res.json(task);
   } catch (error) {
+    // This will print the exact reason for the failure in your server terminal
+    console.error("❌ PATCH Update Error:", error.message);
     res.status(400).json({ error: error.message });
   }
 });

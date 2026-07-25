@@ -126,20 +126,27 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
       });
-      if (!res.ok) throw new Error("Failed to update task");
+
+      if (!res.ok) {
+        // Extract the exact error message from the Express server
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to update task");
+      }
       return res.json();
     },
     onMutate: async ({ id, updates }) => {
       await queryClient.cancelQueries({ queryKey: ["tasks"] });
       const previousTasks = queryClient.getQueryData(["tasks"]);
 
-      // Update UI instantly
       queryClient.setQueryData(["tasks"], (old) =>
         old.map((task) => (task._id === id ? { ...task, ...updates } : task)),
       );
       return { previousTasks };
     },
     onError: (err, variables, context) => {
+      // Revert the optimistic update and log the exact error
+      console.error("Mutation failed:", err.message);
+      alert(`Update failed: ${err.message}`);
       queryClient.setQueryData(["tasks"], context.previousTasks);
     },
     onSettled: () => {
