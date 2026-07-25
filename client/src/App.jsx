@@ -32,7 +32,6 @@ const formatDueDate = (dateString) => {
   return format(d, "MMM d");
 };
 
-// Helper to determine if a task is strictly overdue (past days, not today)
 const isTaskOverdue = (dateString) => {
   if (!dateString) return false;
   const d = new Date(dateString);
@@ -46,7 +45,6 @@ export default function App() {
   const [isRecurring, setIsRecurring] = useState(false);
   const [currentView, setCurrentView] = useState("today");
 
-  // 1. Fetch Tasks
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ["tasks"],
     queryFn: async () => {
@@ -56,7 +54,6 @@ export default function App() {
     },
   });
 
-  // 2. Add Task Mutation
   const addTaskMutation = useMutation({
     mutationFn: async (newTask) => {
       const res = await fetch(API_URL, {
@@ -74,7 +71,6 @@ export default function App() {
     },
   });
 
-  // 3. Toggle Task Mutation
   const toggleMutation = useMutation({
     mutationFn: async (id) => {
       const res = await fetch(`${API_URL}/${id}/toggle`, { method: "PATCH" });
@@ -113,7 +109,6 @@ export default function App() {
     },
   });
 
-  // 4. Delete Task Mutation
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
       const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
@@ -163,32 +158,27 @@ export default function App() {
     return true;
   });
 
-  // --- SORTING LOGIC ---
   const activeTasks = viewFilteredTasks
     .filter((t) => !t.isCompleted)
     .sort((a, b) => {
       const aOverdue = isTaskOverdue(a.dueDate);
       const bOverdue = isTaskOverdue(b.dueDate);
 
-      // 1. Overdue tasks float to the top
       if (aOverdue && !bOverdue) return -1;
       if (!aOverdue && bOverdue) return 1;
 
-      // 2. Sort by Priority (p1 comes before p4)
       if (a.priority !== b.priority) {
         return a.priority.localeCompare(b.priority);
       }
 
-      // 3. Sort by Due Date (earliest first)
       if (a.dueDate && b.dueDate) {
         return new Date(a.dueDate) - new Date(b.dueDate);
       }
 
-      // 4. Tasks with due dates come before tasks without
       if (a.dueDate && !b.dueDate) return -1;
       if (!a.dueDate && b.dueDate) return 1;
 
-      return 0; // Fallback to original creation order
+      return 0;
     });
 
   const completedTasks = viewFilteredTasks.filter((t) => t.isCompleted);
@@ -204,7 +194,8 @@ export default function App() {
         exit={{ opacity: 0, scale: 0.95 }}
         transition={{ duration: 0.2 }}
         key={task._id}
-        className={`group flex items-center justify-between p-3.5 rounded-xl border transition-all ${
+        // FIX: Added w-full here so when it becomes absolute during exit, it keeps its width
+        className={`w-full group flex items-center justify-between p-3.5 rounded-xl border transition-all ${
           task.isCompleted
             ? "bg-zinc-950/50 border-zinc-900/50 opacity-50"
             : "bg-zinc-900/80 border-zinc-700/50 hover:border-zinc-600 shadow-sm"
@@ -321,8 +312,8 @@ export default function App() {
         </nav>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto max-w-3xl mx-auto px-8 py-10">
+      {/* Main Content Area - FIX: Added overflow-x-hidden and w-full */}
+      <main className="flex-1 overflow-y-auto overflow-x-hidden w-full max-w-3xl mx-auto px-8 py-10">
         <header className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight">
             {currentView === "today" ? "Today" : "Habits"}
@@ -391,14 +382,14 @@ export default function App() {
           </div>
         </form>
 
-        {/* Task Lists Wrapper */}
         {isLoading ? (
           <div className="text-center text-zinc-500 text-sm py-10 flex justify-center items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading tasks...
           </div>
         ) : (
           <motion.div layout className="space-y-8">
-            <motion.div layout className="space-y-2">
+            {/* FIX: Added relative and w-full to list container */}
+            <motion.div layout className="space-y-2 relative w-full">
               <AnimatePresence mode="popLayout">
                 {activeTasks.map(renderTask)}
               </AnimatePresence>
@@ -415,7 +406,8 @@ export default function App() {
             </motion.div>
 
             {completedTasks.length > 0 && (
-              <motion.div layout className="space-y-2">
+              // FIX: Added relative and w-full to list container
+              <motion.div layout className="space-y-2 relative w-full">
                 <motion.div layout className="flex items-center gap-3 mb-4">
                   <div className="h-px bg-zinc-800 flex-1"></div>
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
