@@ -7,18 +7,19 @@ import Sidebar from "./components/Sidebar";
 import TaskForm from "./components/TaskForm";
 import TaskItem from "./components/TaskItem";
 import ActivityHeatmap from "./components/ActivityHeatmap";
+import TaskDetail from "./components/TaskDetail";
 
 const API_URL = "http://localhost:5000/api/tasks";
 
 export default function App() {
   const queryClient = useQueryClient();
+
+  // App State
   const [currentView, setCurrentView] = useState("today");
-
-  // Theme State
   const [theme, setTheme] = useState("dark");
-  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
 
-  // ADD THIS: Inject the class into the root HTML element
+  // Apply Dark Mode to HTML root
   useEffect(() => {
     if (theme === "dark") {
       document.documentElement.classList.add("dark");
@@ -27,6 +28,9 @@ export default function App() {
     }
   }, [theme]);
 
+  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
+
+  // --- API QUERIES & MUTATIONS ---
   const { data: tasks = [] } = useQuery({
     queryKey: ["tasks"],
     queryFn: async () => (await fetch(API_URL)).json(),
@@ -96,9 +100,28 @@ export default function App() {
     onSuccess: () => queryClient.invalidateQueries(["tasks"]),
   });
 
-  const viewTasks = tasks.filter((t) =>
-    currentView === "habits" ? t.isRecurring : true,
-  );
+  // --- DATA PROCESSING ---
+  // Dynamic Projects
+  const projects = [
+    ...new Set(tasks.map((t) => t.project).filter((p) => p && p !== "Inbox")),
+  ].sort();
+
+  // Sidebar Counts
+  const counts = {
+    today: tasks.filter((t) => !t.isCompleted).length,
+    habits: tasks.filter((t) => t.isRecurring && !t.isCompleted).length,
+    inbox: tasks.filter(
+      (t) => (!t.project || t.project === "Inbox") && !t.isCompleted,
+    ).length,
+  };
+
+  // Filter List based on Sidebar selection
+  const viewTasks = tasks.filter((t) => {
+    if (currentView === "today") return true;
+    if (currentView === "habits") return t.isRecurring;
+    if (currentView === "Inbox") return !t.project || t.project === "Inbox";
+    return t.project === currentView;
+  });
 
   const activeTasks = viewTasks
     .filter((t) => !t.isCompleted)
@@ -119,41 +142,31 @@ export default function App() {
     });
 
   const completedTasks = viewTasks.filter((t) => t.isCompleted);
-
-  // Framer Motion container variants for staggered list loading
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { staggerChildren: 0.05 } },
-  };
+  const selectedTask = tasks.find((t) => t._id === selectedTaskId);
 
   return (
-    <div className={`${theme}`}>
-      {/* App Wrapper */}
-      <div className="flex h-screen bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans antialiased transition-colors duration-500">
-        <Sidebar
-          currentView={currentView}
-          setCurrentView={setCurrentView}
-          theme={theme}
-          toggleTheme={toggleTheme}
-          counts={{
-            today: tasks.filter((t) => !t.isCompleted).length,
-            habits: tasks.filter((t) => t.isRecurring && !t.isCompleted).length,
-          }}
-        />
+    <div className="flex h-screen bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 font-sans antialiased transition-colors duration-500 overflow-hidden">
+      {/* 1. Left Sidebar */}
+      <Sidebar
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        projects={projects}
+        counts={counts}
+      />
 
-        <main className="flex-1 overflow-y-auto w-full max-w-2xl mx-auto px-10 py-16">
+      {/* 2. Center Main List */}
+      <main className="flex-1 overflow-y-auto px-8 lg:px-12 py-16 relative">
+        <div className="max-w-3xl mx-auto">
           <header className="mb-12">
             <motion.h1 layout className="text-3xl font-bold tracking-tight">
-              {currentView === "today" ? "Today" : "Habits"}
-            </motion.h1>
-            <motion.p
-              layout
-              className="text-neutral-500 dark:text-neutral-400 text-sm mt-1"
-            >
               {currentView === "today"
-                ? "What are you working on?"
-                : "Your recurring routines"}
-            </motion.p>
+                ? "Today"
+                : currentView === "habits"
+                  ? "Habits"
+                  : currentView}
+            </motion.h1>
           </header>
 
           {currentView === "habits" && <ActivityHeatmap tasks={tasks} />}
@@ -164,23 +177,23 @@ export default function App() {
             currentView={currentView}
           />
 
-          <div className="space-y-12">
+          <div className="space-y-12 pb-20">
             <motion.div
-              variants={containerVariants}
+              variants={{
+                hidden: { opacity: 0 },
+                show: { opacity: 1, transition: { staggerChildren: 0.05 } },
+              }}
               initial="hidden"
               animate="show"
-              className="w-full"
             >
               <AnimatePresence mode="popLayout">
                 {activeTasks.map((task) => (
                   <TaskItem
                     key={task._id}
                     task={task}
+                    isSelected={selectedTaskId === task._id}
+                    onSelect={setSelectedTaskId}
                     onToggle={toggleTask.mutate}
-                    onUpdate={(id, updates) =>
-                      updateTask.mutate({ id, updates })
-                    }
-                    onDelete={deleteTask.mutate}
                   />
                 ))}
               </AnimatePresence>
@@ -193,7 +206,7 @@ export default function App() {
 
             {completedTasks.length > 0 && (
               <div className="w-full">
-                <h2 className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 dark:text-neutral-600 mb-4 px-2">
+                <h2 className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 dark:text-neutral-600 mb-4 px-3">
                   Completed
                 </h2>
                 <AnimatePresence mode="popLayout">
@@ -201,19 +214,32 @@ export default function App() {
                     <TaskItem
                       key={task._id}
                       task={task}
+                      isSelected={selectedTaskId === task._id}
+                      onSelect={setSelectedTaskId}
                       onToggle={toggleTask.mutate}
-                      onUpdate={(id, updates) =>
-                        updateTask.mutate({ id, updates })
-                      }
-                      onDelete={deleteTask.mutate}
                     />
                   ))}
                 </AnimatePresence>
               </div>
             )}
           </div>
-        </main>
-      </div>
+        </div>
+      </main>
+
+      {/* 3. Right Detail Panel (Inspector) */}
+      <AnimatePresence>
+        {selectedTask && (
+          <TaskDetail
+            task={selectedTask}
+            onClose={() => setSelectedTaskId(null)}
+            onUpdate={(id, updates) => updateTask.mutate({ id, updates })}
+            onDelete={(id) => {
+              deleteTask.mutate(id);
+              setSelectedTaskId(null);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
