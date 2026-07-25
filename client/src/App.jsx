@@ -27,6 +27,9 @@ export default function App() {
   const [priority, setPriority] = useState("p4");
   const [isRecurring, setIsRecurring] = useState(false);
 
+  // NEW: State to track active sidebar filter
+  const [currentView, setCurrentView] = useState("today"); // 'today' | 'habits'
+
   // 1. Fetch Tasks
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ["tasks"],
@@ -51,7 +54,7 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       setTitle("");
       setPriority("p4");
-      setIsRecurring(false);
+      setIsRecurring(currentView === "habits"); // Automatically set to true if adding from Habits view
     },
   });
 
@@ -125,11 +128,17 @@ export default function App() {
     addTaskMutation.mutate({ title, priority, isRecurring });
   };
 
-  // Split tasks into Active and Completed arrays
-  const activeTasks = tasks.filter((t) => !t.isCompleted);
-  const completedTasks = tasks.filter((t) => t.isCompleted);
+  // --- FILTERING LOGIC ---
+  // First, filter by the active sidebar view
+  const viewFilteredTasks = tasks.filter((task) => {
+    if (currentView === "habits") return task.isRecurring;
+    return true; // 'today' shows everything for now
+  });
 
-  // Helper function to render a task so we don't duplicate code
+  // Then split into active and completed for the UI
+  const activeTasks = viewFilteredTasks.filter((t) => !t.isCompleted);
+  const completedTasks = viewFilteredTasks.filter((t) => t.isCompleted);
+
   const renderTask = (task) => (
     <motion.div
       layout
@@ -190,18 +199,47 @@ export default function App() {
           <span>TaskTrack</span>
         </div>
         <nav className="space-y-1">
-          <button className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-900 text-zinc-100 font-medium text-sm transition-colors">
+          <button
+            onClick={() => {
+              setCurrentView("today");
+              setIsRecurring(false); // Reset to default task type
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium text-sm transition-colors cursor-pointer ${
+              currentView === "today"
+                ? "bg-zinc-900 text-zinc-100"
+                : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+            }`}
+          >
             <span className="flex items-center gap-2.5">
-              <Calendar className="w-4 h-4 text-red-400" /> Today
-            </span>
-            <span className="text-xs text-zinc-500">{activeTasks.length}</span>
-          </button>
-          <button className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition-colors text-sm">
-            <span className="flex items-center gap-2.5">
-              <Layers className="w-4 h-4 text-blue-400" /> Habits
+              <Calendar
+                className={`w-4 h-4 ${currentView === "today" ? "text-red-400" : "text-zinc-500"}`}
+              />
+              Today
             </span>
             <span className="text-xs text-zinc-500">
-              {tasks.filter((t) => t.isRecurring).length}
+              {tasks.filter((t) => !t.isCompleted).length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => {
+              setCurrentView("habits");
+              setIsRecurring(true); // Default to habits when on the habits tab
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium text-sm transition-colors cursor-pointer ${
+              currentView === "habits"
+                ? "bg-zinc-900 text-zinc-100"
+                : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+            }`}
+          >
+            <span className="flex items-center gap-2.5">
+              <Layers
+                className={`w-4 h-4 ${currentView === "habits" ? "text-blue-400" : "text-zinc-500"}`}
+              />
+              Habits
+            </span>
+            <span className="text-xs text-zinc-500">
+              {tasks.filter((t) => t.isRecurring && !t.isCompleted).length}
             </span>
           </button>
         </nav>
@@ -210,8 +248,14 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto max-w-3xl mx-auto px-8 py-10">
         <header className="mb-8">
-          <h1 className="text-2xl font-bold tracking-tight">Today</h1>
-          <p className="text-zinc-500 text-sm mt-1">What are you working on?</p>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {currentView === "today" ? "Today" : "Habits"}
+          </h1>
+          <p className="text-zinc-500 text-sm mt-1">
+            {currentView === "today"
+              ? "What are you working on?"
+              : "Your recurring routines and streaks"}
+          </p>
         </header>
 
         {/* Task Creation Form */}
@@ -223,7 +267,11 @@ export default function App() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g., Meditate for 10 minutes"
+            placeholder={
+              currentView === "habits"
+                ? "e.g., Read 20 pages..."
+                : "e.g., Pay electricity bill..."
+            }
             className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none mb-3"
             disabled={addTaskMutation.isPending}
           />
@@ -239,10 +287,11 @@ export default function App() {
                 <option value="p3">P3 (Low)</option>
                 <option value="p4">P4 (None)</option>
               </select>
+
               <button
                 type="button"
                 onClick={() => setIsRecurring(!isRecurring)}
-                className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-md border transition-colors ${
+                className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-md border transition-colors cursor-pointer ${
                   isRecurring
                     ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
                     : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700"
@@ -275,13 +324,17 @@ export default function App() {
           <motion.div layout className="space-y-8">
             {/* Active Tasks Section */}
             <motion.div layout className="space-y-2">
-              <AnimatePresence>{activeTasks.map(renderTask)}</AnimatePresence>
+              <AnimatePresence mode="popLayout">
+                {activeTasks.map(renderTask)}
+              </AnimatePresence>
               {activeTasks.length === 0 && (
                 <motion.p
                   layout
                   className="text-sm text-zinc-500 text-center py-6"
                 >
-                  You're all caught up for today!
+                  {currentView === "today"
+                    ? "You're all caught up for today!"
+                    : "No habits created yet. Add one above!"}
                 </motion.p>
               )}
             </motion.div>
@@ -297,7 +350,7 @@ export default function App() {
                   <div className="h-px bg-zinc-800 flex-1"></div>
                 </motion.div>
 
-                <AnimatePresence>
+                <AnimatePresence mode="popLayout">
                   {completedTasks.map(renderTask)}
                 </AnimatePresence>
               </motion.div>
