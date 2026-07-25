@@ -1,13 +1,14 @@
 import React, { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CheckCircle2,
+  CircleCheck,
   Circle,
   Flame,
   Calendar,
   Plus,
   Layers,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -90,6 +91,34 @@ function App() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id) => {
+      const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("failed to delete task");
+      return res.json();
+    },
+    onMutate: async (id) => {
+      // Cancel ongoing fetches and get current tasks
+      await queryClient.cancelQueries({ queryKey: ["tasks"] });
+      const previousTask = queryClient.getQueryData(["tasks"]);
+
+      // Optimistically remove the task from the list instantly
+      queryClient.setQueryData(["tasks"], (old) =>
+        old.filter((task) => task._id !== id),
+      );
+
+      return { previousTask };
+    },
+    onError: (err, id, context) => {
+      // Rollback on failure
+      queryClient.setQueryData(["tasks"], context.previousTask);
+    },
+    onSettled: () => {
+      // sync with server
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+
   const handleAddTask = (e) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -140,6 +169,7 @@ function App() {
             onChange={(e) => {
               setTitle(e.target.value);
             }}
+            placeholder="e.g., Meditate for 10 minutes"
             className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none mb-3"
             disabled={addTaskMutation.isPending}
           />
@@ -228,12 +258,24 @@ function App() {
                     </span>
                   </div>
 
-                  {task.isRecurring && (
-                    <div className="flex items-center gap-1 text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 ml-4">
-                      <Flame className="w-3.5 h-3.5 fill-amber-500" />
-                      <span>{task.currentStreak} day streak</span>
-                    </div>
-                  )}
+                  {/* Streak Badge and Delete Button */}
+                  <div className="flex items-center gap-3 ml-4">
+                    {task.isRecurring && (
+                      <div className="flex items-center gap-1 text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                        <Flame className="w-3.5 h-3.5 fill-amber-500" />
+                        <span>{task.currentStreak} day streak</span>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => deleteMutation.mutate(task._id)}
+                      className="text-zinc-600 hover:text-red-400 p-1.5 rounded-md hover:bg-red-400/10 transition-colors focus:outline-none opacity-0 group-hover:opacity-100 cursor-pointer"
+                      title="Delete Task"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  
                 </motion.div>
               ))}
             </AnimatePresence>
