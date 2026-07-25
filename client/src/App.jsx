@@ -143,8 +143,102 @@ function App() {
             className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none mb-3"
             disabled={addTaskMutation.isPending}
           />
-          <div></div>
+          <div className="flex items-center justify-between pt-2 border-t border-zinc-800/60">
+            <div className="flex items-center gap-2">
+              <select
+                value={priority}
+                onChange={(e) => {
+                  setPriority(e.target.value);
+                }}
+                className="bg-zinc-800 text-xs text-zinc-300 rounded-md px-2 py-1.5 border border-zinc-700 focus:outline-none cursor-pointer hover:bg-zinc-700 transition-colors"
+              >
+                <option value="p1">P1 (High)</option>
+                <option value="p2">P2 (Medium)</option>
+                <option value="p3">P3 (Low)</option>
+                <option value="p4">P4 (None)</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRecurring(!isRecurring);
+                }}
+                className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-md border transition-colors ${
+                  isRecurring
+                    ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
+                    : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700"
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5" /> Habit
+              </button>
+            </div>
+            <button
+              type="submit"
+              disabled={addTaskMutation.isPending || !title.trim()}
+              className="bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-semibold px-4 py-1.5 rounded-md flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+            >
+              {addTaskMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Plus className="w-3.5 h-3.5" />
+              )}{" "}
+              Add
+            </button>
+          </div>
         </form>
+
+        {/* task list with framer motion */}
+        {isLoading ? (
+          <div className="text-center text-zinc-500 text-sm py-10 flex justify-center items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading tasks...
+          </div>
+        ) : (
+          <motion.div layout className="space-y-2">
+            <AnimatePresence>
+              {tasks.map((task) => (
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.2 }}
+                  key={task._id}
+                  className={`flex items-center justify-between p-3.5 rounded-xl border transition-all ${
+                    task.isCompleted
+                      ? "bg-zinc-950/50 border-zinc-900/50 opacity-50"
+                      : "bg-zinc-900/80 border-zinc-700/50 hover:border-zinc-600 shadow-sm"
+                  }`}
+                >
+                  <div className="flex items-center gap-3 flex-1">
+                    <button
+                      onClick={() => toggleMutation.mutate(task._id)}
+                      className="text-zinc-500 hover:text-zinc-300 transition-colors focus:outline-none cursor-pointer"
+                    >
+                      {task.isCompleted ? (
+                        <CheckCircle2 className="w-5 h-5 text-zinc-500 fill-zinc-800" />
+                      ) : (
+                        <Circle
+                          className={`w-5 h-5 ${PRIORITY_COLORS[task.priority]}`}
+                        />
+                      )}
+                    </button>
+                    <span
+                      className={`text-sm select-none ${task.isCompleted ? "line-through text-zinc-500" : "text-zinc-200"}`}
+                    >
+                      {task.title}
+                    </span>
+                  </div>
+
+                  {task.isRecurring && (
+                    <div className="flex items-center gap-1 text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 ml-4">
+                      <Flame className="w-3.5 h-3.5 fill-amber-500" />
+                      <span>{task.currentStreak} day streak</span>
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
       </main>
     </div>
   );
