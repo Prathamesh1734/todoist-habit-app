@@ -8,6 +8,7 @@ const taskSchema = new mongoose.Schema(
     currentStreak: { type: Number, default: 0 },
     isCompleted: { type: Boolean, default: false },
     dueDate: { type: Date, default: null },
+    history: { type: [String], default: [] },
   },
   { timestamps: true },
 );

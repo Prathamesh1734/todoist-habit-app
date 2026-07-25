@@ -13,7 +13,14 @@ import {
   CalendarClock,
 } from "lucide-react";
 import * as chrono from "chrono-node";
-import { format, isToday, isTomorrow, isPast, startOfDay } from "date-fns";
+import {
+  format,
+  isToday,
+  isTomorrow,
+  isPast,
+  startOfDay,
+  subDays,
+} from "date-fns";
 
 const API_URL = "http://localhost:5000/api/tasks";
 
@@ -38,16 +45,69 @@ const isTaskOverdue = (dateString) => {
   return isPast(startOfDay(d)) && !isToday(d);
 };
 
+// --- NEW COMPONENT: Activity Heatmap ---
+const ActivityHeatmap = ({ tasks }) => {
+  // Generate the last 84 days (12 weeks)
+  const days = Array.from({ length: 84 }).map((_, i) => {
+    const d = subDays(new Date(), 83 - i);
+    return format(d, "yyyy-MM-dd");
+  });
+
+  // Count completions per day across all tasks
+  const activityMap = {};
+  tasks.forEach((task) => {
+    if (task.history) {
+      task.history.forEach((date) => {
+        activityMap[date] = (activityMap[date] || 0) + 1;
+      });
+    }
+  });
+
+  // Determine color intensity based on completion count
+  const getColor = (count) => {
+    if (count === 0)
+      return "bg-zinc-800/50 outline outline-1 outline-zinc-800/80";
+    if (count === 1)
+      return "bg-emerald-900 outline outline-1 outline-emerald-900/50";
+    if (count === 2)
+      return "bg-emerald-700 outline outline-1 outline-emerald-700/50";
+    return "bg-emerald-500 outline outline-1 outline-emerald-500/50 shadow-[0_0_8px_rgba(16,185,129,0.4)]";
+  };
+
+  return (
+    <div className="mb-10 p-5 rounded-xl border border-zinc-800/80 bg-zinc-900/30">
+      <h3 className="text-sm font-medium text-zinc-400 mb-4 flex items-center gap-2">
+        <Flame className="w-4 h-4 text-emerald-500" />
+        Activity History
+      </h3>
+
+      <div className="overflow-x-auto pb-2">
+        <div className="grid grid-rows-7 grid-flow-col gap-1.5 w-max">
+          {days.map((date) => {
+            const count = activityMap[date] || 0;
+            return (
+              <div
+                key={date}
+                title={`${date}: ${count} tasks completed`}
+                className={`w-3 h-3 rounded-[2px] transition-colors duration-300 ${getColor(count)} cursor-default`}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- MAIN APP COMPONENT ---
 export default function App() {
   const queryClient = useQueryClient();
 
-  // Create Form State
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState("p4");
   const [isRecurring, setIsRecurring] = useState(false);
   const [currentView, setCurrentView] = useState("today");
 
-  // Inline Editing State
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
 
@@ -79,7 +139,7 @@ export default function App() {
     },
   });
 
-  // 3. Toggle Task Completion (Optimistic)
+  // 3. Toggle Task Completion (with Heatmap Optimistic Update)
   const toggleMutation = useMutation({
     mutationFn: async (id) => {
       const res = await fetch(`${API_URL}/${id}/toggle`, { method: "PATCH" });
@@ -94,15 +154,30 @@ export default function App() {
           if (task._id === id) {
             const isNowCompleted = !task.isCompleted;
             let newStreak = task.currentStreak;
+            let newHistory = [...(task.history || [])];
+
+            // Get local date in YYYY-MM-DD
+            const today = format(new Date(), "yyyy-MM-dd");
+
+            // Handle Streak
             if (task.isRecurring) {
               newStreak = isNowCompleted
                 ? newStreak + 1
                 : Math.max(0, newStreak - 1);
             }
+
+            // Handle Heatmap History
+            if (isNowCompleted) {
+              if (!newHistory.includes(today)) newHistory.push(today);
+            } else {
+              newHistory = newHistory.filter((date) => date !== today);
+            }
+
             return {
               ...task,
               isCompleted: isNowCompleted,
               currentStreak: newStreak,
+              history: newHistory,
             };
           }
           return task;
@@ -118,7 +193,7 @@ export default function App() {
     },
   });
 
-  // 4. Update Task Content (Optimistic Edit)
+  // 4. Update Task Content
   const updateTaskMutation = useMutation({
     mutationFn: async ({ id, updates }) => {
       const res = await fetch(`${API_URL}/${id}`, {
@@ -126,9 +201,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
       });
-
       if (!res.ok) {
-        // Extract the exact error message from the Express server
         const errData = await res.json();
         throw new Error(errData.error || "Failed to update task");
       }
@@ -144,7 +217,6 @@ export default function App() {
       return { previousTasks };
     },
     onError: (err, variables, context) => {
-      // Revert the optimistic update and log the exact error
       console.error("Mutation failed:", err.message);
       alert(`Update failed: ${err.message}`);
       queryClient.setQueryData(["tasks"], context.previousTasks);
@@ -154,7 +226,7 @@ export default function App() {
     },
   });
 
-  // 5. Delete Task Mutation (Optimistic)
+  // 5. Delete Task Mutation
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
       const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
@@ -177,7 +249,6 @@ export default function App() {
     },
   });
 
-  // Handle Form Submit
   const handleAddTask = (e) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -199,9 +270,8 @@ export default function App() {
     });
   };
 
-  // Inline Editing Handlers
   const handleDoubleClick = (task) => {
-    if (task.isCompleted) return; // Optional: Prevent editing if checked off
+    if (task.isCompleted) return;
     setEditingTaskId(task._id);
     setEditTitle(task.title);
   };
@@ -221,7 +291,6 @@ export default function App() {
       finalTitle = editTitle.replace(parsedResults[0].text, "").trim();
     }
 
-    // Only fire mutation if something actually changed
     if (finalTitle !== task.title || dueDate !== task.dueDate) {
       updateTaskMutation.mutate({
         id: task._id,
@@ -232,7 +301,6 @@ export default function App() {
     setEditingTaskId(null);
   };
 
-  // Filtering & Sorting Logic
   const viewFilteredTasks = tasks.filter((task) => {
     if (currentView === "habits") return task.isRecurring;
     return true;
@@ -243,18 +311,14 @@ export default function App() {
     .sort((a, b) => {
       const aOverdue = isTaskOverdue(a.dueDate);
       const bOverdue = isTaskOverdue(b.dueDate);
-
       if (aOverdue && !bOverdue) return -1;
       if (!aOverdue && bOverdue) return 1;
-
       if (a.priority !== b.priority)
         return a.priority.localeCompare(b.priority);
-
       if (a.dueDate && b.dueDate)
         return new Date(a.dueDate) - new Date(b.dueDate);
       if (a.dueDate && !b.dueDate) return -1;
       if (!a.dueDate && b.dueDate) return 1;
-
       return 0;
     });
 
@@ -418,6 +482,16 @@ export default function App() {
               : "Your recurring routines and streaks"}
           </p>
         </header>
+
+        {/* Heatmap (Only visible in Habits view) */}
+        {currentView === "habits" && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <ActivityHeatmap tasks={tasks} />
+          </motion.div>
+        )}
 
         {/* Task Form */}
         <form

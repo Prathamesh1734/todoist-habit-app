@@ -38,21 +38,30 @@ app.post("/api/tasks", async (req, res) => {
 app.patch("/api/tasks/:id/toggle", async (req, res) => {
   try {
     const task = await Task.findById(req.params.id);
-    if (!task) return res.status(404).json({ error: "task not found" });
+    if (!task) return res.status(404).json({ error: "Task not found" });
 
     task.isCompleted = !task.isCompleted;
 
-    if (task.isRecurring) {
-      if (task.isCompleted) {
-        task.currentStreak += 1;
-      } else {
-        task.currentStreak = Math.max(0, task.currentStreak - 1);
+    // Get today's date in YYYY-MM-DD format (adjusting for local timezone if needed)
+    const today = new Date().toISOString().split("T")[0];
+
+    if (task.isCompleted) {
+      // Add to history if not already there
+      if (!task.history.includes(today)) {
+        task.history.push(today);
       }
+      if (task.isRecurring) task.currentStreak += 1;
+    } else {
+      // Remove from history
+      task.history = task.history.filter((date) => date !== today);
+      if (task.isRecurring)
+        task.currentStreak = Math.max(0, task.currentStreak - 1);
     }
 
     await task.save();
     res.json(task);
   } catch (error) {
+    console.error("❌ Toggle Error:", error.message);
     res.status(400).json({ error: error.message });
   }
 });
